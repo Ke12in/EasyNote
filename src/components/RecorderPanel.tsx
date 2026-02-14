@@ -42,6 +42,8 @@ export const RecorderPanel = forwardRef<
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const recognitionRef = useRef<SpeechRecognition | null>(null)
+  const recordingSecondsRef = useRef(0)
+  const transcriptRef = useRef('')
   const [recordingMode, setRecordingMode] = useState<'audio' | 'screen' | 'voice'>('audio')
   const [error, setError] = useState('')
   const [permission, setPermission] = useState<'idle' | 'granted' | 'denied'>('idle')
@@ -98,10 +100,15 @@ export const RecorderPanel = forwardRef<
     [captureFrame, onSnapshot, recordingSeconds, transcript, stopRecording]
   )
 
+  recordingSecondsRef.current = recordingSeconds
+  transcriptRef.current = transcript
+
   useEffect(() => {
     if (!isRecording) return
     timerRef.current = setInterval(() => {
-      setRecordingSeconds((s) => s + 1)
+      recordingSecondsRef.current += 1
+      const nextSeconds: number = recordingSecondsRef.current
+      setRecordingSeconds(nextSeconds)
     }, 1000)
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
@@ -183,7 +190,9 @@ export const RecorderPanel = forwardRef<
             final += event.results[i][0].transcript
           }
           if (event.results[event.results.length - 1].isFinal) {
-            setTranscript((t) => (t ? t + ' ' + final : final))
+            const nextTranscript: string = transcriptRef.current ? transcriptRef.current + ' ' + final : final
+            transcriptRef.current = nextTranscript
+            setTranscript(nextTranscript)
           }
         }
         recognition.start()
