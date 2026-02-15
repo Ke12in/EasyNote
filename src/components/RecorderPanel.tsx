@@ -34,6 +34,7 @@ export const RecorderPanel = forwardRef<
     transcript,
     setTranscript,
     onSnapshot,
+    onRecordingComplete,
   },
   ref
 ) {
@@ -135,7 +136,7 @@ export const RecorderPanel = forwardRef<
       } else if (voiceOnly) {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       } else {
-        const videoConstraints: MediaTrackConstraints = isLikelyIOS
+        const videoConstraints: MediaTrackConstraints | boolean = isLikelyIOS
           ? { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
           : true
         try {
