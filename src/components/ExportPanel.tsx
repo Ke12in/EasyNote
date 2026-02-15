@@ -27,70 +27,125 @@ export function ExportPanel({
   const generatePdf = async () => {
     const doc = new jsPDF({ unit: 'pt', format: 'a4' })
     const pageW = doc.internal.pageSize.getWidth()
-    const margin = 40
-    let y = 40
+    const pageH = doc.internal.pageSize.getHeight()
+    const margin = 50
+    const footerH = 28
+    let y = margin
+    let pageNum = 1
+
+    const addFooter = () => {
+      doc.setFontSize(9)
+      doc.setFont('helvetica', 'normal')
+      doc.setTextColor(128, 128, 128)
+      doc.text(`EasyNote · Page ${pageNum}`, margin, pageH - 14)
+      doc.text(formatTime(Date.now()), pageW - margin - 80, pageH - 14)
+      doc.setTextColor(0, 0, 0)
+      pageNum += 1
+    }
 
     const addText = (text: string, fontSize: number, isBold = false) => {
       doc.setFontSize(fontSize)
       doc.setFont('helvetica', isBold ? 'bold' : 'normal')
       const lines = doc.splitTextToSize(text, pageW - 2 * margin)
       for (const line of lines) {
-        if (y > doc.internal.pageSize.getHeight() - 50) {
+        if (y > pageH - footerH - 20) {
+          addFooter()
           doc.addPage()
-          y = 40
+          y = margin
         }
         doc.text(line, margin, y)
-        y += fontSize * 0.4
+        y += fontSize * 0.45
+      }
+      y += 6
+    }
+
+    const addSectionHeader = (title: string) => {
+      if (y > pageH - footerH - 40) {
+        addFooter()
+        doc.addPage()
+        y = margin
+      }
+      doc.setFontSize(12)
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(79, 70, 229)
+      doc.text(title, margin, y)
+      y += 4
+      doc.setDrawColor(200, 200, 200)
+      doc.line(margin, y, pageW - margin, y)
+      y += 16
+      doc.setTextColor(0, 0, 0)
+    }
+
+    // Cover page
+    doc.setFontSize(24)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(79, 70, 229)
+    doc.text('EasyNote', margin, 80)
+    doc.setFontSize(14)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(100, 100, 100)
+    doc.text('Session notes & recording summary', margin, 100)
+    doc.setTextColor(0, 0, 0)
+    doc.setFontSize(16)
+    doc.setFont('helvetica', 'bold')
+    doc.text(sessionTitle || 'Untitled session', margin, 140)
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(128, 128, 128)
+    doc.text(`Generated ${formatTime(Date.now())}`, margin, 160)
+    doc.setTextColor(0, 0, 0)
+    y = 200
+    addFooter()
+    doc.addPage()
+    y = margin
+    pageNum = 2
+
+    if (summary) {
+      addSectionHeader('Summary')
+      addText(summary, 10)
+      y += 8
+    }
+
+    if (notes.length > 0) {
+      addSectionHeader('Notes')
+      for (const n of notes) {
+        addText(`${formatTime(n.timestamp)} — ${n.content}`, 10)
       }
       y += 8
     }
 
-    addText(sessionTitle || 'EasyNote', 18, true)
-    addText(`Generated: ${formatTime(Date.now())}`, 10)
-    y += 10
-
-    if (summary) {
-      addText('Summary', 14, true)
-      addText(summary, 10)
-      y += 10
-    }
-
-    if (notes.length > 0) {
-      addText('Notes', 14, true)
-      for (const n of notes) {
-        addText(`${formatTime(n.timestamp)} — ${n.content}`, 10)
-      }
-      y += 10
-    }
-
     if (transcript) {
-      addText('Transcript', 14, true)
-      addText(transcript.slice(0, 4000) + (transcript.length > 4000 ? '…' : ''), 9)
-      y += 10
+      addSectionHeader('Transcript')
+      addText(transcript.slice(0, 5000) + (transcript.length > 5000 ? '…' : ''), 9)
+      y += 8
     }
 
     if (snapshots.length > 0) {
-      addText('Snapshots', 14, true)
+      addSectionHeader('Snapshots')
       for (let i = 0; i < snapshots.length; i++) {
         const s = snapshots[i]
         try {
           const imgW = pageW - 2 * margin
-          const imgH = 120
-          if (y + imgH > doc.internal.pageSize.getHeight() - 40) {
+          const imgH = 140
+          if (y + imgH > pageH - footerH - 20) {
+            addFooter()
             doc.addPage()
-            y = 40
+            y = margin
           }
           doc.addImage(s.dataUrl, 'JPEG', margin, y, imgW, imgH)
-          y += imgH + 4
+          y += imgH + 6
           doc.setFontSize(9)
+          doc.setTextColor(100, 100, 100)
           doc.text(s.label, margin, y)
-          y += 20
+          doc.setTextColor(0, 0, 0)
+          y += 18
         } catch (_) {
           addText(`[Image ${i + 1}: ${s.label}]`, 9)
         }
       }
     }
 
+    addFooter()
     doc.save(`${(sessionTitle || 'EasyNote').replace(/[^a-z0-9]/gi, '-')}-${Date.now()}.pdf`)
   }
 

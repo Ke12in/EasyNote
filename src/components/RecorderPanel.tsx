@@ -15,6 +15,7 @@ interface RecorderPanelProps {
   transcript: string
   setTranscript: (s: string) => void
   onSnapshot: (dataUrl: string, label: string) => void
+  onRecordingComplete?: (blob: Blob) => void
 }
 
 export const RecorderPanel = forwardRef<
@@ -47,6 +48,8 @@ export const RecorderPanel = forwardRef<
   const [recordingMode, setRecordingMode] = useState<'audio' | 'screen' | 'voice'>('audio')
   const [error, setError] = useState('')
   const [permission, setPermission] = useState<'idle' | 'granted' | 'denied'>('idle')
+  const supportsScreenShare = typeof navigator.mediaDevices?.getDisplayMedia === 'function'
+  const isLikelyIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
 
   const stopRecording = useCallback(() => {
     if (timerRef.current) {
@@ -121,6 +124,10 @@ export const RecorderPanel = forwardRef<
       let stream: MediaStream
       const voiceOnly = recordingMode === 'voice'
       if (recordingMode === 'screen') {
+        if (!supportsScreenShare) {
+          setError('Screen recording is not supported on this device. Use a desktop browser (Chrome, Edge) for screen capture.')
+          return
+        }
         stream = await navigator.mediaDevices.getDisplayMedia({
           video: true,
           audio: true,
@@ -128,7 +135,22 @@ export const RecorderPanel = forwardRef<
       } else if (voiceOnly) {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       } else {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true })
+        const videoConstraints: MediaTrackConstraints = isLikelyIOS
+          ? { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
+          : true
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+            video: videoConstraints,
+          })
+        } catch (camErr) {
+          const msg = camErr instanceof Error ? camErr.message : ''
+          if (msg.includes('Permission') || msg.includes('NotAllowed') || msg.includes('NotFound')) {
+            setError('Camera access denied or unavailable. Try "Voice only" or allow camera in Settings.')
+            return
+          }
+          throw camErr
+        }
       }
       streamRef.current = stream
       if (videoRef.current) {
@@ -144,25 +166,33 @@ export const RecorderPanel = forwardRef<
         ? 'video/webm;codecs=vp9'
         : 'video/webm'
       const isAudioOnly = voiceOnly
-      const mimeType = isAudioOnly && audioMime ? audioMime : videoMime
+      let mimeType = isAudioOnly && audioMime ? audioMime : videoMime
+      if (!isAudioOnly && !MediaRecorder.isTypeSupported(videoMime)) {
+        mimeType = MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4' : ''
+      }
       const options: MediaRecorderOptions = {
         audioBitsPerSecond: 128000,
       }
       if (isAudioOnly) {
         options.mimeType = audioMime || undefined
       } else {
-        options.mimeType = mimeType
+        if (mimeType) options.mimeType = mimeType
         options.videoBitsPerSecond = 2500000
       }
 
-      const recorder = new MediaRecorder(stream, options)
+      let recorder: MediaRecorder
+      try {
+        recorder = new MediaRecorder(stream, options)
+      } catch (_) {
+        recorder = new MediaRecorder(stream, { audioBitsPerSecond: 128000 })
+      }
       const chunks: Blob[] = []
       recorder.ondataavailable = (e) => {
         if (e.data.size) chunks.push(e.data)
       }
       recorder.onstop = () => {
-        const type = isAudioOnly ? (audioMime || 'audio/webm') : 'video/webm'
-        const ext = type.startsWith('audio/') ? 'webm' : 'webm'
+        const type = isAudioOnly ? (audioMime || 'audio/webm') : (recorder.mimeType || 'video/webm')
+        const ext = type.includes('mp4') ? 'mp4' : 'webm'
         const blob = new Blob(chunks, { type })
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
@@ -170,6 +200,7 @@ export const RecorderPanel = forwardRef<
         a.download = `session-${Date.now()}.${ext}`
         a.click()
         URL.revokeObjectURL(url)
+        onRecordingComplete?.(blob)
       }
       recorder.start(1000)
       mediaRecorderRef.current = recorder
@@ -239,17 +270,21 @@ export const RecorderPanel = forwardRef<
               />
               <span className="text-sm">Voice only</span>
             </label>
-            <label className="flex items-center gap-2 cursor-pointer min-h-[44px] sm:min-h-0 py-1">
+            <label className={`flex items-center gap-2 cursor-pointer min-h-[44px] sm:min-h-0 py-1 ${!supportsScreenShare ? 'opacity-70' : ''}`}>
               <input
                 type="radio"
                 name="mode"
                 checked={recordingMode === 'screen'}
                 onChange={() => setRecordingMode('screen')}
+                disabled={!supportsScreenShare}
                 className="rounded-full border-zinc-600 text-indigo-600 focus:ring-indigo-500 w-4 h-4"
               />
               <span className="text-sm">Screen + Mic</span>
             </label>
           </div>
+          {!supportsScreenShare && (
+            <p className="text-xs text-[var(--text-muted)]">Screen recording is available on desktop (Chrome, Edge).</p>
+          )}
         </div>
       )}
 
